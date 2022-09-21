@@ -16,7 +16,8 @@ class SortBase:
         # params
         self.N, self.M = N, M
         self.B = B
-        self.DUMMY = 0xffffffff
+        # self.DUMMY = 0xffffffff
+        self.DUMMY = '0xffffffff\n'
         # inStructureId, sampleId, sortedSampleId, outStructureId1, outStructureId2
         self.data = [[], [], [], [], []]
         # IO cost counting
@@ -31,7 +32,6 @@ class SortBase:
         self.data[structureId][index:index+blockSize] = buffer
         self.IOcost += math.ceil(blockSize/self.B)
 
-    # TODO: check all this function calling
     def opOneLinearScanBlock(self, index, block, blockSize, structureId, write=0, dummyNum=0):
         if not (blockSize + dummyNum):
             return []
@@ -63,6 +63,17 @@ class SortBase:
         for i in range(size):
             self.data[structureId].append(size - i)
         # random.shuffle(self.data[structureId])
+    
+    def readData(self, structureId):
+        f = open("/Users/apple/Desktop/Lab/ALLSORT/ALLSORT/input2000")
+        self.data[structureId] = f.readlines()
+        f.close()
+
+    def outResult(self, structureId, size):
+        f = open("/Users/apple/Desktop/Lab/ALLSORT/ALLSORT/output2000", "w")
+        self.data[structureId][0:size] = [x[:-1]+'\r\n' for x in self.data[structureId][0:size]]
+        f.writelines(self.data[structureId][0:size])
+        f.close()
 
     def test(self, structureId, size):
         passFlag = True
@@ -99,7 +110,7 @@ class FFSEM:
     """
     Paper: Feistel Finite Set Encryption Mode
     """
-    def __init__(self, key: bytes, max_num: int, rounds: int = 6):
+    def __init__(self, key: bytes, max_num: int, rounds: int = 10):
         self.cipher = AES.new(key, AES.MODE_ECB)
         self._base = math.ceil(math.log2(max_num) / 2)
         self.max_num = 1 << 2*self._base
@@ -205,11 +216,13 @@ class OQSORT(SortBase):
         """
         if not self.sortId:
             self.resId = self.ObliviousTightSort(self.structureId, self.paddedSize, self.structureId + 1,self.structureId + 2)
-            self.test(self.resId, self.paddedSize)
+            # self.test(self.resId, self.paddedSize)
+            self.outResult(self.resId, self.paddedSize)
         else:
             self.resId, self.resN = self.ObliviousLooseSort(self.structureId, self.paddedSize, self.structureId + 1, self.structureId + 2)
             self.testWithDummy(self.resId, self.resN)
-
+            # self.outResult(self.resId, self.paddedSize)
+        '''
         f = open("/homes/bchenba/OQSORT/out.txt", "w")
         for idx in range(self.resN//2, self.resN//2+1000000):
             f.write(str(self.data[self.resId][idx]) + str(' '))
@@ -217,7 +230,7 @@ class OQSORT(SortBase):
                 f.write('\n')
 
         f.close()
-
+        '''
     def call2(self):
         """
         Method to Call Two-Level OQSORT
@@ -287,7 +300,8 @@ class OQSORT(SortBase):
                 if j >= n_prime:
                     break
 
-        trustedM2.sort()
+        # trustedM2.sort()
+        trustedM2.sort(key=lambda x: x[0:10])
         # print(trustedM2)
         return n_prime
 
@@ -329,8 +343,8 @@ class OQSORT(SortBase):
         sampleSize = end - start
         for i in range(1, p):
             samples[i] = samples[i * sampleSize // p]
-        samples[0] = float('-inf')
-        samples[p] = float('inf')
+        samples[0] = chr(0) * 10
+        samples[p] = chr(127) * 10
         return samples[0:p + 1]
 
     def partition(self, arr, low, high, pivot):
@@ -338,10 +352,17 @@ class OQSORT(SortBase):
         Return partition border index
         """
         i = low - 1
+        '''
         for j in range(low, high+1):
             if pivot > arr[j]:
                 i += 1
                 arr[i], arr[j] = arr[j], arr[i]
+        '''
+        # New Input
+        for j in range(low, high+1):
+            if pivot[0:10] > arr[j][0:10]:
+                i += 1
+                arr[i], arr[j] = arr[j], arr[i] 
         return i
 
     def quickSort(self, arr, low, high, pivots, left, right):
@@ -521,7 +542,8 @@ class OQSORT(SortBase):
         if inSize <= self.M:
             trustedM = []
             trustedM = self.opOneLinearScanBlock(0, trustedM, inSize, inStructureId, 0)
-            trustedM.sort()
+            # trustedM.sort()
+            trustedM.sort(key=lambda x: x[0:10])
             self.data[outStructureId1] = [self.DUMMY] * inSize
             self.opOneLinearScanBlock(0, trustedM, inSize, outStructureId1, 1)
             return outStructureId1
@@ -545,7 +567,7 @@ class OQSORT(SortBase):
         for i in range(sectionNum):
             trustedM = self.opOneLinearScanBlock(i * sectionSize, trustedM, sectionSize, outStructureId1, 0)
             k = self.moveDummy(trustedM, sectionSize)
-            trustedM_part = sorted(trustedM[0:k])
+            trustedM_part = sorted(trustedM[0:k], key=lambda x: x[0:10])
             trustedM[0:k] = trustedM_part
             self.opOneLinearScanBlock(j, trustedM, k, outStructureId2, 1)
             j += k
@@ -576,7 +598,7 @@ class OQSORT(SortBase):
         for i in range(sectionNum):
             trustedM = self.opOneLinearScanBlock(i * sectionSize, trustedM, sectionSize, outStructureId2, 0)
             k = self.moveDummy(trustedM, sectionSize)
-            trustedM_part = sorted(trustedM[0:k])
+            trustedM_part = sorted(trustedM[0:k], key=lambda x: x[0:10])
             trustedM[0:k] = trustedM_part
             self.opOneLinearScanBlock(j, trustedM, k, outStructureId1, 1)
             j += k
@@ -591,7 +613,8 @@ class OQSORT(SortBase):
         if inSize <= self.M:
             trustedM = []
             trustedM = self.opOneLinearScanBlock(0, trustedM, inSize, inStructureId, 0)
-            trustedM.sort()
+            # trustedM.sort()
+            trustedM.sort(key=lambda x: x[0:10]) 
             self.opOneLinearScanBlock(0, trustedM, inSize, outStructureId1, 1)
             return outStructureId1, inSize
 
@@ -614,7 +637,7 @@ class OQSORT(SortBase):
         for i in range(sectionNum):
             trustedM = self.opOneLinearScanBlock(i * sectionSize, trustedM, sectionSize, outStructureId1, 0)
             k = self.moveDummy(trustedM, sectionSize)
-            trustedM_part = sorted(trustedM[0:k])
+            trustedM_part = sorted(trustedM[0:k], key=lambda x: x[0:10])
             trustedM[0:k] = trustedM_part
             self.opOneLinearScanBlock(i * sectionSize, trustedM, sectionSize, outStructureId2, 1)
         end3 = time.time()
@@ -646,7 +669,7 @@ class OQSORT(SortBase):
         for i in range(sectionNum):
             trustedM = self.opOneLinearScanBlock(i * sectionSize, trustedM, sectionSize, outStructureId2, 0)
             k = self.moveDummy(trustedM, sectionSize)
-            trustedM_part = sorted(trustedM[0:k])
+            trustedM_part = sorted(trustedM[0:k], key=lambda x: x[0:10])
             trustedM[0:k] = trustedM_part
             self.opOneLinearScanBlock(i * sectionSize, trustedM, sectionSize, outStructureId1, 1)
 
@@ -708,6 +731,7 @@ class OQSORT(SortBase):
                     break
             if j >= self.P-1 and outj >= self.P:
                 break
+        # TODO: STring COmpare Error, need changing
         pivots1.insert(0, float('-inf'))
         pivots1.append(float('inf'))
         for i in range(self.P):
@@ -719,13 +743,14 @@ class OQSORT(SortBase):
 if __name__ == '__main__':
     # M=32MB 4194304
     # N, M, B, is_tight = 200000000, 2000000, 3, 0
-    N, M, B, is_tight = 1342177280, 16777216, 4, 1
+    N, M, B, is_tight = 2000000, 222222, 4, 1
     sortCase1 = OQSORT(N, M, B, 0, N)
     if N / M < 100:
         # is_tight flag
         sortCase1.onelevel(is_tight)
         print("Start running...")
-        sortCase1.init(0, N)
+        # sortCase1.init(0, N)
+        sortCase1.readData(0)
         sortCase1.call()
         print("Finished.")
     else:
