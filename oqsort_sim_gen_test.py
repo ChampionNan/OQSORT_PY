@@ -1,6 +1,5 @@
 from tracemalloc import start
 from Crypto.Cipher import AES
-from Crypto.Random import get_random_bytes
 import numpy as np
 import random
 import math
@@ -71,7 +70,7 @@ class SortBase:
         f.close()
 
     def outResult(self, structureId, size):
-        f = open("/home/data/bchenba/output"+str(self.N)+"T", "w")
+        f = open("/home/data/bchenba/output"+str(self.N), "w")
         self.data[structureId][0:size] = [x[:-1]+'\r\n' for x in self.data[structureId][0:size]]
         f.writelines(self.data[structureId][0:size])
         f.close()
@@ -79,10 +78,8 @@ class SortBase:
     def test(self, structureId, size):
         passFlag = True
         for i in range(1, size):
-            if self.data[structureId][i - 1][0:10] > self.data[structureId][i][0:10]:
+            if self.data[structureId][i - 1] > self.data[structureId][i]:
                 passFlag = False
-                print(self.data[structureId][i - 1][0:10])
-                print(self.data[structureId][i][0:10])
                 break
         if passFlag:
             print("TEST Passed")
@@ -100,7 +97,7 @@ class SortBase:
                 if self.data[structureId][j] != self.DUMMY:
                     findFlag = True
                     break
-            if findFlag and self.data[structureId][i][0:10] <= self.data[structureId][j][0:10]:
+            if findFlag and self.data[structureId][i] <= self.data[structureId][j]:
                 i = j
             elif not findFlag:
                 print("TEST Passed")
@@ -113,7 +110,7 @@ class FFSEM:
     """
     Paper: Feistel Finite Set Encryption Mode
     """
-    def __init__(self, key: bytes, max_num: int, rounds: int = 6):
+    def __init__(self, key: bytes, max_num: int, rounds: int = 12):
         self.cipher = AES.new(key, AES.MODE_ECB)
         self._base = math.ceil(math.log2(max_num) / 2)
         self.max_num = 1 << 2*self._base
@@ -121,7 +118,7 @@ class FFSEM:
             print("Permuted range is: " + str(self.max_num))
         self.rounds = rounds
     
-    def prf(self, a):
+    def prf(self, a: int) -> int:
         b = a.to_bytes(self.cipher.block_size, byteorder='big', signed=False)
         return int.from_bytes(self.cipher.encrypt(b), byteorder='big', signed=False)
 
@@ -159,25 +156,25 @@ class OQSORT(SortBase):
         self.resN = self.N
         self.sortId = -1
         self.is_tight = -1
-        # OQSORT params
+        # TODO: OQSORT params
         self.ALPHA, self.BETA, self.P, self.IdealCost = -1, -1, -1, -1
         # used for 2 level, 2nd sample params
         self._alpha, self._beta, self._p, self._cost, self._is_tight = -1, -1, -1, -1, -1
         # Memory Load partition index array
         self.partitionIdx = []
 
-    def onelevel(self, N, is_tight, kappa=27.8):
+    def onelevel(self, is_tight, kappa=27.8):
         x = sympy.Symbol('x')
         g = x ** 2 * (1 - x) / (1 + x) ** 2 / (1 + x / 2) / (1 + 2 * x)
-        y = g - 2 * (1 + 2 * x) * N * self.B / self.M / self.M * (kappa + 1 + 2 * math.log(N / self.M))
+        y = g - 2 * (1 + 2 * x) * self.N * self.B / self.M / self.M * (kappa + 1 + 2 * math.log(self.N / self.M))
         res = sympy.solveset(y, x, sympy.Interval(0, 1))
         if len(res) == 0:
             raise ValueError("N too large!")
         beta = min(res)
-        alpha = (kappa + 1 + math.log(N)) * 4 * (1 + beta) * (1 + 2 * beta) / beta / beta / self.M
-        if alpha * N > self.M - self.B:
+        alpha = (kappa + 1 + math.log(self.N)) * 4 * (1 + beta) * (1 + 2 * beta) / beta / beta / self.M
+        if alpha * self.N > self.M - self.B:
             raise ValueError("N too large!")
-        p = math.ceil((1 + 2 * beta) * N / self.M)
+        p = math.ceil((1 + 2 * beta) * self.N / self.M)
         if is_tight:
             cost = 7 + 4 * beta
         else:
@@ -188,6 +185,7 @@ class OQSORT(SortBase):
         self.is_tight = is_tight
         return self.ALPHA, self.BETA, self.P, self.IdealCost
 
+    # TODO: Two sets of alpha, beta, p
     def twolevel(self, is_tight, kappa=27.8):
         print("Calculating Parameters")
         x = sympy.Symbol('x')
@@ -200,7 +198,7 @@ class OQSORT(SortBase):
         beta = min(res)
         alpha = (kappa + 2 + math.log(self.N)) * 4 * (1 + beta) * (1 + 2 * beta) / beta / beta / self.M
         p = math.ceil(math.sqrt((1 + 2 * beta) * self.N / self.M))
-        self._alpha, self._beta, self._p, self._cost = self.onelevel(alpha*self.N, False, kappa + 1)
+        self._alpha, self._beta, self._p, self._cost = self.onelevel(False, kappa + 1)
         # print("alpha1=%f, beta1=%f, p1=%d, cost1=%f" % (_alpha, _beta, _p, _cost))
         if is_tight:
             cost = 9 + 7 * alpha + 8 * beta
@@ -223,13 +221,16 @@ class OQSORT(SortBase):
         else:
             self.resId, self.resN = self.ObliviousLooseSort(self.structureId, self.paddedSize, self.structureId + 1, self.structureId + 2)
             self.testWithDummy(self.resId, self.resN)
-            f = open("/homes/bchenba/OQSORT/out.txt"+str(self.N)+"L", "w")
-            for idx in range(self.resN):
-                f.write(str(self.data[self.resId][idx]) + str(' '))
-                if not (idx % 10):
-                    f.write('\n')
-            f.close()
+            # self.outResult(self.resId, self.paddedSize)
+        '''
+        f = open("/homes/bchenba/OQSORT/out.txt", "w")
+        for idx in range(self.resN//2, self.resN//2+1000000):
+            f.write(str(self.data[self.resId][idx]) + str(' '))
+            if not (idx % 10):
+                f.write('\n')
 
+        f.close()
+        '''
     def call2(self):
         """
         Method to Call Two-Level OQSORT
@@ -237,17 +238,18 @@ class OQSORT(SortBase):
         """
         if not self.sortId:
             self.resId = self.ObliviousTightSort2(self.structureId, self.paddedSize, self.structureId + 1, self.structureId + 2, self.structureId + 3, self.structureId + 4)
-            # self.test(self.resId, self.paddedSize)
-            self.outResult(self.resId, self.paddedSize)
+            self.test(self.resId, self.paddedSize)
         else:
             self.resId, self.resN = self.ObliviousLooseSort2(self.structureId, self.paddedSize, self.structureId + 1, self.structureId + 2, self.structureId + 3, self.structureId + 4)
             self.testWithDummy(self.resId, self.resN)
-            f = open("/homes/bchenba/OQSORT/out.txt"+str(self.N)+"L", "w")
-            for idx in range(self.resN):
-                f.write(str(self.data[self.resId][idx]) + str(' '))
-                if not (idx % 10):
-                    f.write('\n')
-            f.close()
+
+        f = open("/Users/apple/Desktop/Lab/ALLSORT/ALLSORT/OQSORT/OQSORT/outputpy.txt", "w")
+        for idx in range(self.resN):
+            f.write(str(self.data[self.resId][idx]) + str(' '))
+            if not (idx % 10):
+                f.write('\n')
+
+        f.close()
 
     def Hypergeometric(self, NN, Msize, n_prime):
         m = 0
@@ -303,10 +305,10 @@ class OQSORT(SortBase):
         # print(trustedM2)
         return n_prime
 
+    '''TODO: Return all the pivots needed in two levels'''
     def SampleRec(self, inStructureId, sampleId, sortedSampleId, is_tight):
         """
         Finish sample tight recursive selection
-        Return: Return all the pivots needed in two levels
         """
         N_prime = N
         n_prime = math.ceil(self.ALPHA * N_prime)
@@ -358,7 +360,6 @@ class OQSORT(SortBase):
         '''
         # New Input
         for j in range(low, high+1):
-            a, b = pivot[0:10], arr[j][0:10] 
             if pivot[0:10] > arr[j][0:10]:
                 i += 1
                 arr[i], arr[j] = arr[j], arr[i] 
@@ -393,14 +394,14 @@ class OQSORT(SortBase):
 
     def OneLevelPartition(self, inStructureId, inSize, samples, sampleSize, p, outStructureId1):
         if inSize <= self.M:
-            return inSize, 1
+            return self.N, 1
         # TODO: change self.N
-        hatN = math.ceil((1 + 2 * self.BETA) * inSize)
+        hatN = math.ceil((1 + 2 * self.BETA) * self.N)
         M_prime = math.ceil(self.M / (1 + 2 * self.BETA))
         r = math.ceil(math.log(hatN / self.M) / math.log(p))
         p0 = math.ceil(hatN / (self.M * math.pow(p, r - 1)))
         trustedM1 = self.quantileCal(samples, 0, sampleSize, p0)
-        boundary1 = math.ceil(inSize / M_prime)
+        boundary1 = math.ceil(self.N / M_prime)
         boundary2 = math.ceil(M_prime / self.B)
         dataBoundary = boundary2 * self.B
         # TODO: floor operation
@@ -410,8 +411,9 @@ class OQSORT(SortBase):
         self.data[outStructureId1] = [self.DUMMY] * (boundary1 * smallSectionSize * p0)
         trustedM3 = [self.DUMMY] * (boundary2 * self.B)
         # Set up for pseudorandom permutation
-        total_blocks = math.ceil(inSize / self.B)
-        key = get_random_bytes(32)
+        blocks_done = 0
+        total_blocks = math.ceil(self.N / self.B)
+        key = b'1Level Partition'
         codec = FFSEM(key, max_num=total_blocks)
         index_range = codec.max_num
         k = 0
@@ -427,7 +429,7 @@ class OQSORT(SortBase):
                     read_index = codec.encrypt(k)  
                 if k == -1: # Read finish
                     break
-                Msize1 = min(self.B, inSize - read_index * self.B)
+                Msize1 = min(self.B, self.N - read_index * self.B)
                 trustedM3[j*self.B:j*self.B + Msize1] = self.opOneLinearScanBlock(read_index * self.B, [], Msize1, inStructureId, 0)
                 k += 1
                 if k == index_range: # Read finish
@@ -474,28 +476,21 @@ class OQSORT(SortBase):
         blocks_done = 0
         total_blocks = math.ceil(self.N / self.B)
         trustedM3 = [self.DUMMY] * (boundary2 * self.B)
-        # Set up for pseudorandom permutation
-        total_blocks = math.ceil(self.N / self.B)
-        key = get_random_bytes(32)
-        codec = FFSEM(key, max_num=total_blocks)
-        index_range = codec.max_num
-        k = 0
         # First Level
         for i in range(boundary1):
             for j in range(boundary2):
-                read_index = codec.encrypt(k)
-                while read_index >= total_blocks:
-                    k += 1
-                    if k == index_range:
-                        k = -1
-                        break
-                    read_index = codec.encrypt(k)
-                if k == -1:
-                    break
-                Msize1 = min(self.B, self.N - read_index * self.B)
-                trustedM3[j*self.B:j*self.B+Msize1] = self.opOneLinearScanBlock(read_index*self.B, [], Msize1, inStructureId, 0)
-                k += 1
-                if k == index_range:
+                if not (total_blocks - 1 - blocks_done):
+                    k = 0
+                else:
+                    k = random.randrange(0, total_blocks - blocks_done)
+                Msize1 = min(self.B, self.N - k * self.B)
+                trustedM3[j * self.B:j * self.B + Msize1] = self.opOneLinearScanBlock(k * self.B, [], Msize1, inStructureId, 0)  # type: ignore
+                shuffleB = [self.DUMMY] * self.B
+                Msize2 = min(self.B, self.N - (total_blocks - 1 - blocks_done) * self.B)
+                shuffleB[0:Msize2] = self.opOneLinearScanBlock((total_blocks - 1 - blocks_done) * self.B, [], Msize2, inStructureId, 0)  # type: ignore
+                self.opOneLinearScanBlock(k * self.B, shuffleB, self.B, inStructureId, 1)
+                blocks_done += 1
+                if blocks_done == total_blocks:
                     break
             blockNum = self.moveDummy(trustedM3, dataBoundary)
             self.quickSort(trustedM3, 0, blockNum - 1, pivots[0], 1, p0)
@@ -691,14 +686,13 @@ class OQSORT(SortBase):
         Inner sample func, use _alpha etc params
         Return: Selected Pivots: List
         """
+        # TODO: FIX different input size error
         print("In ObliviousLooseSortRec")
         trustedM2 = []
         print("In Sample's Sample")
         realNum = self.Sample(sampleId, sampleSize, trustedM2, 0, 1)
         print("In OneLevelPartition")
         sectionSize, sectionNum = self.OneLevelPartition(sampleId, sampleSize, trustedM2, realNum, self._p, sortedSampleId)
-        
-        
         j, k, total = 0, 0, 0
         outj, inj = 0, 0
         trustedM = []
@@ -717,7 +711,6 @@ class OQSORT(SortBase):
         for i in range(sectionNum):
             trustedM = self.opOneLinearScanBlock(i * sectionSize, trustedM, sectionSize, sortedSampleId)
             k = self.moveDummy(trustedM, sectionSize)
-            trustedM = sorted(trustedM[0:k], key=lambda x: x[0:10])
             total += k
             # Cal Level1 pivots
             while j < self.P-1 and quantileIdx[j] < total:
@@ -726,7 +719,7 @@ class OQSORT(SortBase):
             # Cal Level2 pivots
             while outj < self.P:
                 while inj < self.P-1 and quantileIdx2[outj][inj] < total:
-                    pivots2_part.append(trustedM[quantileIdx2[outj][inj]-(total-k)])
+                    pivots2_part.append(trustedM[quantileIdx2[outj][inj] % sectionSize])
                     inj += 1
                     # this small section ends
                     if inj == self.P-1:
@@ -735,27 +728,27 @@ class OQSORT(SortBase):
                         pivots2.append(pivots2_part)
                         pivots2_part = []
                         break
-                if outj == self.P or quantileIdx2[outj][inj] >= total:
+                if outj == self.P:
                     break
             if j >= self.P-1 and outj >= self.P:
                 break
-        # TODO: String Compare Error, change to one data,could be whole data or just randomKey
-        pivots1.insert(0, chr(0)*10)
-        pivots1.append(chr(127)*10)
+        # TODO: STring COmpare Error, need changing
+        pivots1.insert(0, float('-inf'))
+        pivots1.append(float('inf'))
         for i in range(self.P):
-            pivots2[i].insert(0, chr(0)*10)
-            pivots2[i].append(chr(127)*10)
+            pivots2[i].insert(0, float('-inf'))
+            pivots2[i].append(float('inf')) 
         return [pivots1, pivots2]
 
 
 if __name__ == '__main__':
     # M=32MB 4194304
-    N, M, B, is_tight = 10000000, 100000, 2, 1
+    N, M, B, is_tight = 20000000, 200000, 1, 0
     # N, M, B, is_tight = 335544320, 16777216, 4, 1
     sortCase1 = OQSORT(N, M, B, 0, N)
     if N / M < 100:
         # is_tight flag
-        sortCase1.onelevel(N, is_tight)
+        sortCase1.onelevel(is_tight)
         print("Start running...")
         # sortCase1.init(0, N)
         sortCase1.readData(0)
@@ -765,8 +758,7 @@ if __name__ == '__main__':
         # TODO: 2 level execution
         sortCase1.twolevel(is_tight)
         print("Start running...")
-        # sortCase1.init(0, N)
-        sortCase1.readData(0) 
+        sortCase1.init(0, N)
         sortCase1.call2()
         print("Finished.")
 
