@@ -63,7 +63,8 @@ class SortBase:
 
     def init(self, structureId, size):
         for i in range(size):
-            self.data[structureId].append(size - i)
+            # self.data[structureId].append(size - i)
+            self.data[structureId].append(size) 
         # random.shuffle(self.data[structureId])
     
     def readData(self, structureId):
@@ -226,7 +227,12 @@ class OQSORT(SortBase):
                 self.outResult(self.resId, self.paddedSize)
             else :
                 self.test(self.resId, self.paddedSize)
-                self.outResult(self.resId, self.paddedSize)
+                f = open("/home/data/bchenba/output"+str(self.N)+"L", "w")
+                for idx in range(self.resN):
+                    f.write(str(self.data[self.resId][idx]) + str(' '))
+                    if not (idx % 10):
+                        f.write('\n')
+                f.close()
         else:
             self.resId, self.resN = self.ObliviousLooseSort(self.structureId, self.paddedSize, self.structureId + 1, self.structureId + 2)
             self.testWithDummy(self.resId, self.resN, self.bench_data)
@@ -422,10 +428,8 @@ class OQSORT(SortBase):
         boundary1 = math.ceil(inSize / M_prime)
         boundary2 = math.ceil(M_prime / self.B)
         dataBoundary = boundary2 * self.B
-        # TODO: floor operation
         smallSectionSize = self.M // p0
         bucketSize0 = boundary1 * smallSectionSize
-        # TODO: check initial list operations
         self.data[outStructureId1] = [self.DUMMY] * (boundary1 * smallSectionSize * p0)
         trustedM3 = [self.DUMMY] * (boundary2 * self.B)
         # Set up for pseudorandom permutation
@@ -490,27 +494,29 @@ class OQSORT(SortBase):
         smallSectionSize = self.M // p0
         bucketSize0 = boundary1 * smallSectionSize
         self.data[outStructureId1] = [self.DUMMY] * (boundary1 * smallSectionSize * p0)
-        blocks_done = 0
-        total_blocks = math.ceil(self.N / self.B)
         trustedM3 = [self.DUMMY] * (boundary2 * self.B)
         # Set up for pseudorandom permutation
-        blocks_done = 0
-        total_blocks = math.ceil(self.N / self.B)
+        total_blocks = math.ceil(inSize / self.B)
+        key = get_random_bytes(32)
+        codec = FFSEM(key, max_num=total_blocks)
+        index_range = codec.max_num
+        k = 0
         # First Level
         for i in range(boundary1):
             for j in range(boundary2):
-                if not (total_blocks - 1 - blocks_done):
-                    k = 0
-                else:
-                    k = random.randrange(0, total_blocks - blocks_done)
-                Msize1 = min(self.B, self.N - k * self.B)
-                trustedM3[j * self.B:j * self.B + Msize1] = self.opOneLinearScanBlock(k * self.B, [], Msize1, inStructureId, 0)  # type: ignore
-                shuffleB = [self.DUMMY] * self.B
-                Msize2 = min(self.B, self.N - (total_blocks - 1 - blocks_done) * self.B)
-                shuffleB[0:Msize2] = self.opOneLinearScanBlock((total_blocks - 1 - blocks_done) * self.B, [], Msize2, inStructureId, 0)  # type: ignore
-                self.opOneLinearScanBlock(k * self.B, shuffleB, self.B, inStructureId, 1)
-                blocks_done += 1
-                if blocks_done == total_blocks:
+                read_index = codec.encrypt(k)
+                while read_index >= total_blocks:
+                    k += 1
+                    if k == index_range:
+                        k = -1
+                        break
+                    read_index = codec.encrypt(k)  
+                if k == -1: # Read finish
+                    break
+                Msize1 = min(self.B, inSize - read_index * self.B)
+                trustedM3[j*self.B:j*self.B + Msize1] = self.opOneLinearScanBlock(read_index * self.B, [], Msize1, inStructureId, 0)
+                k += 1
+                if k == index_range: # Read finish
                     break
             blockNum = self.moveDummy(trustedM3, dataBoundary)
             self.quickSort(trustedM3, 0, blockNum - 1, pivots[0], 1, p0)
@@ -790,15 +796,18 @@ class OQSORT(SortBase):
 
 if __name__ == '__main__':
     # M=32MB 4194304
-    N, M, B, is_tight, bench_data = 100000000, 1000000, 4, 1, 1
+    N, M, B, is_tight, bench_data = 134217728, 16777216, 4, 1, 0
+    print("N, M, B: " + str(N) + ', ' +str(M) + ', ' + str(B))
     # N, M, B, is_tight = 335544320, 16777216, 4, 1
     sortCase1 = OQSORT(N, M, B, 0, N, bench_data)
-    if N / M < 100:
+    if N / M <= 128:
         # is_tight flag
         sortCase1.onelevel(N, is_tight)
         print("Start running...")
-        # sortCase1.init(0, N)
-        sortCase1.readData(0)
+        if bench_data:
+            sortCase1.readData(0)
+        else :
+            sortCase1.init(0, N)
         sortCase1.call()
         print("Finished.")
     else:
