@@ -18,8 +18,8 @@ class SortBase:
         # params
         self.N, self.M = N, M
         self.B = B
-        # self.DUMMY = 0xffffffff
-        self.DUMMY = '0xffffffff\n'
+        self.DUMMY = 0xffffffff
+        # self.DUMMY = '0xffffffff\n'
         # inStructureId, sampleId, sortedSampleId, outStructureId1, outStructureId2
         self.data = [[], [], [], [], []]
         # IO cost counting
@@ -63,8 +63,8 @@ class SortBase:
 
     def init(self, structureId, size):
         for i in range(size):
-            # self.data[structureId].append(size - i)
-            self.data[structureId].append(size) 
+            self.data[structureId].append(size - i)
+            # self.data[structureId].append(size) 
         # random.shuffle(self.data[structureId])
     
     def readData(self, structureId):
@@ -103,7 +103,13 @@ class SortBase:
                 if self.data[structureId][j] != self.DUMMY:
                     findFlag = True
                     break
-            a, b = self.data[structureId][i - 1], self.data[structureId][i] if not bench_data else self.data[structureId][i - 1][0:10], self.data[structureId][i][0:10]
+            a, b = -1, -1
+            if not bench_data:
+                a = self.data[structureId][i]
+                b =  self.data[structureId][j]
+            else:
+                a = self.data[structureId][i][0:10]
+                b =  self.data[structureId][j][0:10]
             if findFlag and a <= b:
                 i = j
             elif not findFlag:
@@ -111,6 +117,9 @@ class SortBase:
                 return
             else:
                 print("TEST Failed")
+                print(a)
+                print(b)
+                break
         return
 
 class FFSEM:
@@ -171,7 +180,7 @@ class OQSORT(SortBase):
         # Memory Load partition index array
         self.partitionIdx = []
 
-    def onelevel(self, N, is_tight, kappa=27.8):
+    def onelevel(self, N, is_tight, kappa=28):
         x = sympy.Symbol('x')
         g = x ** 2 * (1 - x) / (1 + x) ** 2 / (1 + x / 2) / (1 + 2 * x)
         y = g - 2 * (1 + 2 * x) * N * self.B / self.M / self.M * (kappa + 1 + 2 * math.log(N / self.M))
@@ -187,7 +196,7 @@ class OQSORT(SortBase):
             cost = 7 + 4 * beta
         else:
             cost = 6 + 6 * beta + alpha * self.B
-        print("One: alpha=%f, beta=%f, p=%d, cost=%f" % (alpha, beta, p, cost))
+        print("One: alpha, beta, p, cost: " + str(alpha) + ',' + str(beta) + ',' + str(p) + ',' + str(cost))
         self.ALPHA, self.BETA, self.P, self.IdealCost = alpha, beta, p, cost
         self.sortId = not is_tight
         self.is_tight = is_tight
@@ -212,7 +221,7 @@ class OQSORT(SortBase):
         else:
             cost = 8 + (6 + self.B) * alpha + 10 * beta
         self.ALPHA, self.BETA, self.P, self.IdealCost = alpha, beta, p, cost
-        print("Two: alpha=%f, beta=%f, p=%d, cost=%f" % (alpha, beta, p, cost))
+        print("Two: alpha, beta, p, cost: " + str(alpha) + ',' + str(beta) + ',' + str(p) + ',' + str(cost))
         self.sortId = not is_tight
         self.is_tight = is_tight
 
@@ -466,7 +475,7 @@ class OQSORT(SortBase):
                 index1, index2 = self.partitionIdx[j]+1, self.partitionIdx[j+1]
                 writeBackNum = index2 - index1 + 1
                 if writeBackNum > smallSectionSize:
-                    print("Overflow in small section M/p0: " + str(writeBackNum))
+                    print("Overflow in small section M/p0: " + str(writeBackNum) + ',' + str(smallSectionSize))
                 self.opOneLinearScanBlock(j * bucketSize0 + i * smallSectionSize, trustedM3[index1:index2+1], writeBackNum, outStructureId1, 1, smallSectionSize - writeBackNum)
             trustedM3 = [self.DUMMY] * (boundary2 * self.B)
             self.partitionIdx.clear()
@@ -496,7 +505,7 @@ class OQSORT(SortBase):
         self.data[outStructureId1] = [self.DUMMY] * (boundary1 * smallSectionSize * p0)
         trustedM3 = [self.DUMMY] * (boundary2 * self.B)
         # Set up for pseudorandom permutation
-        total_blocks = math.ceil(inSize / self.B)
+        total_blocks = math.ceil(self.N / self.B)
         key = get_random_bytes(32)
         codec = FFSEM(key, max_num=total_blocks)
         index_range = codec.max_num
@@ -513,7 +522,7 @@ class OQSORT(SortBase):
                     read_index = codec.encrypt(k)  
                 if k == -1: # Read finish
                     break
-                Msize1 = min(self.B, inSize - read_index * self.B)
+                Msize1 = min(self.B, self.N - read_index * self.B)
                 trustedM3[j*self.B:j*self.B + Msize1] = self.opOneLinearScanBlock(read_index * self.B, [], Msize1, inStructureId, 0)
                 k += 1
                 if k == index_range: # Read finish
@@ -796,7 +805,8 @@ class OQSORT(SortBase):
 
 if __name__ == '__main__':
     # M=32MB 4194304
-    N, M, B, is_tight, bench_data = 134217728, 16777216, 4, 1, 0
+    M = 16777216
+    N, B, is_tight, bench_data =  256*M, 4, 1, 0
     print("N, M, B: " + str(N) + ', ' +str(M) + ', ' + str(B))
     # N, M, B, is_tight = 335544320, 16777216, 4, 1
     sortCase1 = OQSORT(N, M, B, 0, N, bench_data)
@@ -806,19 +816,22 @@ if __name__ == '__main__':
         print("Start running...")
         if bench_data:
             sortCase1.readData(0)
+            sortCase1.DUMMY = "0xffffffff\n"
         else :
             sortCase1.init(0, N)
         sortCase1.call()
-        print("Finished.")
     else:
         # TODO: 2 level execution
         sortCase1.twolevel(is_tight)
         print("Start running...")
         if bench_data:
             sortCase1.readData(0)
+            sortCase1.DUMMY = "0xffffffff\n"
         else:
             sortCase1.init(0, N)
         sortCase1.call2()
-        print("Finished.")
+    print("Real IOcost: " + str(sortCase1.IOcost/N*B))
+    print("Finished.")
+    
 
 
