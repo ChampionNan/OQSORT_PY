@@ -805,8 +805,8 @@ class OQSORT(SortBase):
 
 if __name__ == '__main__':
     # M=32MB 4194304
-    M = 16777216
-    N, B, is_tight, bench_data =  256*M, 4, 1, 0
+    M = 67108864 # 16777216
+    N, B, is_tight, bench_data = 128*M, 4, 0, 0
     print("N, M, B: " + str(N) + ', ' +str(M) + ', ' + str(B))
     # N, M, B, is_tight = 335544320, 16777216, 4, 1
     sortCase1 = OQSORT(N, M, B, 0, N, bench_data)
